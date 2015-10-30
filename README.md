@@ -16,7 +16,6 @@ I AM VERY OPEN TO SUGGESTIONS/HELP.  As I mentioned I haven't written a kitchen 
 ---
 driver:
   name: lxd_cli
-  # optional: searches ~/.ssh/ by default for public key
 #  public_key_path: "~/.ssh/id_rsa.pub"
 
 provisioner:
@@ -62,6 +61,20 @@ LXD Links:
 [LXD Publish Image](https://insights.ubuntu.com/2015/06/30/publishing-lxd-images/)
 
 ## <a name="installation"></a> Installation and Setup
+
+Must have LXD installed on OS, I've only tested on Ubuntu 15.10
+
+Install on command line:
+
+gem install kitchen-lxd_cli
+
+or use bundler:
+
+gem "kitchen-lxd_cli"
+
+gem "kitchen-lxd_cli", :github => "bradenwright/kitchen-lxd_cli"
+
+gem "kitchen-lxd_cli", :path => "~/kitchen-lxd_cli"
 
 Please read the [Driver usage][driver_usage] page for more details.
 
@@ -123,9 +136,9 @@ Created and maintained by [Braden Wright][author] (<braden.m.wright@gmail.com>)
 Apache 2.0 (see [LICENSE][license])
 
 
-[author]:           https://github.com/enter-github-user
-[issues]:           https://github.com/enter-github-user/kitchen-lxd_cli/issues
-[license]:          https://github.com/enter-github-user/kitchen-lxd_cli/blob/master/LICENSE
-[repo]:             https://github.com/enter-github-user/kitchen-lxd_cli
+[author]:           https://github.com/bradenwright
+[issues]:           https://github.com/bradenwright/kitchen-lxd_cli/issues
+[license]:          https://github.com/bradenwright/kitchen-lxd_cli/blob/master/LICENSE
+[repo]:             https://github.com/bradenwright/kitchen-lxd_cli
 [driver_usage]:     http://docs.kitchen-ci.org/drivers/usage
 [chef_omnibus_dl]:  http://www.getchef.com/chef/install/
