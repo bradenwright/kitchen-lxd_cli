@@ -8,9 +8,9 @@ Gem::Specification.new do |spec|
   spec.version       = Kitchen::Driver::LXD_CLI_VERSION
   spec.authors       = ['Braden Wright']
   spec.email         = ['braden.m.wright@gmail.com']
-  spec.description   = %q{A Test Kitchen Driver for LxdCli}
+  spec.description   = %q{A Test Kitchen Driver for LXD}
   spec.summary       = spec.description
-  spec.homepage      = ''
+  spec.homepage      = 'https://github.com/bradenwright/kitchen-lxd_cli'
   spec.license       = 'Apache 2.0'
 
   spec.files         = `git ls-files`.split($/)
