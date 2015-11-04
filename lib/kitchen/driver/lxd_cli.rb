@@ -97,10 +97,12 @@ module Kitchen
           if $?.to_i == 0
             debug("Image #{image_name} exists")
           else
-            info("Image #{image_name} doesn't exist, creating now. May take a few minutes.")
+            info("Image #{image_name} doesn't exist, creating now.")
             image = get_image_info
             image_os = config[:image_os] ||= image[:os]
             image_release = config[:image_release] ||= image[:release]
+            info("This may take a little while.  If image fails, or you want to see progress bar, stop this and run the following command manually:")
+            info("lxd-images import #{image_os} #{image_release} --alias #{image_name}")
             run_local_command("lxd-images import #{image_os} #{image_release} --alias #{image_name}")
           end
           return image_name
@@ -252,20 +254,6 @@ module Kitchen
             sleep 0.3
           end while true
           debug("Found #{path}")
-        end
-
-        def setup_ssh_access
-          info("Setting up public key #{config[:public_key_path]} on #{instance.name}")
-          wait_for_path("/root/.ssh")
- 
-          begin
-            debug("Uploading public key...")
-            `lxc file push #{config[:public_key_path]} #{instance.name}/root/.ssh/authorized_keys 2> /dev/null`
-            break if $?.to_i == 0
-            sleep 0.3
-          end while true
-
-          debug("Finished Copying public key from #{config[:public_key_path]} to #{instance.name}")
         end
 
         def run_lxc_command(cmd)
