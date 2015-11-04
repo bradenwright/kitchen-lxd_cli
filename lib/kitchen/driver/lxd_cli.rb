@@ -101,9 +101,8 @@ module Kitchen
             image = get_image_info
             image_os = config[:image_os] ||= image[:os]
             image_release = config[:image_release] ||= image[:release]
-            info("This may take a little while.  If image fails, or you want to see progress bar, stop this and run the following command manually:")
-            info("lxd-images import #{image_os} #{image_release} --alias #{image_name}")
-            run_local_command("lxd-images import #{image_os} #{image_release} --alias #{image_name}")
+            debug("Ran command: lxd-images import #{image_os} #{image_release} --alias #{image_name}")
+            IO.popen("lxd-images import #{image_os} #{image_release} --alias #{image_name}", "w") { |pipe| puts pipe.gets rescue nil }
           end
           return image_name
         end
@@ -166,6 +165,7 @@ module Kitchen
               debug("Setting up the following dns servers via /etc/resolvconf/resolv.conf.d/base:")
               debug(dns_servers.gsub("\n", ' '))
               p.puts(" echo \"#{dns_servers.chomp}\" > /etc/resolvconf/resolv.conf.d/base")
+              wait_for_path("/run/resolvconf/interface")
               p.puts("resolvconf -u")
             end
 

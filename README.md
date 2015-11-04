@@ -115,7 +115,7 @@ Current config options:
 *  ip_gateway
 *  stop_instead_of_destroy
 
-public_key_path: /my/path/public_key_file
+public_key_path:
 
 can be manual set otherwise is derived by default based 
 ~/.ssh/ directory, specifically the setting is derived by searching for:
