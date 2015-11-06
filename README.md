@@ -42,7 +42,21 @@ driver:
   image_os: ubuntu
   image_release: trusty
   profile: my_lxc_profile
-  config: limits.memory=2G
+  config:
+    limits.memory: 2G
+    limits.cpus: 2
+    boot.autostart: true
+  domain_name: lxc
+  ip_gateway: 10.0.3.1
+  dns_servers: ["10.0.3.1", "8.8.8.8", "8.8.4.4"]
+#  never_destroy: true
+  lxd_proxy_install: true
+#  lxd_proxy_destroy: true
+#  lxd_proxy_verify: true
+#  lxd_proxy_update: true
+#  lxd_proxy_path: "~/.lxd_proxy"
+#  lxd_proxy_github_url: "-b development --single-branch https://github.com/bradenwright/cookbook-lxd_polipo
+
   domain_name: localdomain
   dns_servers: ["8.8.8.8","8.8.4.4"]
   ipv4: 10.0.3.99/24
@@ -113,7 +127,13 @@ Current config options:
 *  dns_servers
 *  ipv4
 *  ip_gateway
-*  stop_instead_of_destroy
+*  never_destroy
+*  lxd_proxy_install
+*  lxd_proxy_destroy
+*  lxd_proxy_verify
+*  lxd_proxy_update
+*  lxd_proxy_path
+*  lxd_proxy_github_url
 
 public_key_path:
 
@@ -144,7 +164,7 @@ Default is Nil.  See LXC documentation but a lxc profile can be specified.  Whic
 
 config:
 
-Default is Nil.  See LXC documentation but a lxc config container key/value can be specified.  [LXC Container Config Options](https://github.com/lxc/lxd/blob/master/specs/configuration.md#keyvalue-configuration-1).  Again option is passed to "lxc init" command.  NOTE: I haven't successfully set more than 1 config option via "lxc init" command, so still need to figure that out, or rewrite this piece.
+Default is Nil.  See LXC documentation but a lxc config container key/value can be specified.  [LXC Container Config Options](https://github.com/lxc/lxd/blob/master/specs/configuration.md#keyvalue-configuration-1).  Hash of config options is looped over and "lxc config set" command is run for each key/value pair.
 
 domain_name:
 
@@ -165,9 +185,41 @@ ip_gateway:
 Allows for a default gateway to be set.  If ipv4 is used ip_gateway default value is 10.0.3.1, if dhcp is used then default gateway is given via dhcp.  Default gateway is also used as a dns_server if static ips are used and no dns server is specified.
 
 
-stop_instead_of_destroy:
+never_destroy:
 
 Default is false.  Can be useful sometimes to keep machines intact.  It allows kitchen destroy to stop container, kitchen create can be issued to start boxes if they are not running.
+
+lxd_proxy_install:
+
+Default is false.  If true it installs polipo proxy by cloning  into .lxd_proxy and running test kitchen in that directory.  It only runs the first time unless you tell it to update.  Also if the proxy already exists from another project, the existing container (named proxy-ubuntu-1404) will be used, started if necessary.  Recommended use for testing would be to set this value to true and leave all others as defaults.  It will significantly increase your test kitchen runs.  But be sure to setup nodes in .kitchen.yml with normal proxy settings, e.g.
+
+```
+provisioner:
+  name: chef_zero
+  http_proxy: http://10.0.3.5:8123
+  https_proxy: https://10.0.3.5:8123
+  chef_omnibus_url: http://www.chef.io/chef/install.sh
+```
+
+lxd_proxy_destroy:
+
+Default is false.  By default proxy is not destroyed and it is set to auto boot.  This way after proxy is installed once, it should just be there and usable for all your cookbooks.
+
+lxd_proxy_verify:
+
+Default is false.  If false then kitchen converge command is used, which speeds up the process.  If you want to run serverspec tests to ensure polipo is up set this value to true.
+
+lxd_proxy_update:
+
+Default is false.  Very little has been tested, and could be errors that one would manually have to deal with.  But it attempts to pull from git, update berkshelf, re-run kitchen converge.  Takes extra time but may come in useful.  At this point I would recommend just destroying and recreating the lxd_proxy if there are any issues.
+
+lxd_proxy_path:
+
+Default is `~/.lxd_proxy` Path of where github gets cloned can be changed.  That location is used so only 1 copy needs to exist on disk for all cookbook.  But most of the disk space is the lxc container thats running the polipo proxy, container is named proxy-ubuntu-1404 by default.
+
+lxd_proxy_github_url:
+
+Default is https://github.com/bradenwright/cookbook-lxd_polipo basically if can be overridden so that whatever repo is used.  Idea being that someone can customize the polipo install I have setup.  Or try to use a completely different type of proxy (not polipo) as long as the git-repo would create a proxy by running `bundle install` and `bundle exec kitchen converge`.  Also if you don't want to use github if you setup a container named proxy-ubuntu-1404, ie `lxc info proxy-ubuntu-1404` returns a box it will be used.
 
 ### <a name="config-require-chef-omnibus"></a> require\_chef\_omnibus
 
@@ -191,9 +243,11 @@ The default value is unset, or `nil`.
 * Config option to add remote for lxc, so images can be downloaded from other locations.  Currently would have to manually be done in LXD/LXC
 * Config option to publish container on verify
 * Config option to install upstart (not used by default in containers)
-* Config option for proxy/cache
-* Ability to set more than 1 config (key/value)
 * Example chef cookbook which uses this driver to setup a multi-node web application
+* Allow specifying name of container
+* More thorough check to see if proxy exists, right now looking for directory
+* Ability to configure ip, maybe ram, etc too, for lxd_proxy_install (currently would need to be done manually, either via lxc or via .lxd_proxy/.kitchen.yml)
+* Write a transport for lxd_cli, using ssh is a lot slower than using lxc commands
 
 ## <a name="development"></a> Development
 

@@ -8,7 +8,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#    http://wwoow.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -36,17 +36,20 @@ module Kitchen
           File.expand_path('~/.ssh/id_ecdsa.pub')
         ].find { |path| File.exist?(path) }
       end
-      default_config :stop_instead_of_destroy, false
+      default_config :never_destroy, false
+      default_config :lxd_proxy_path, "#{ENV['HOME']}/.lxd_proxy"
+      default_config :lxd_proxy_update, false
       
       required_config :public_key_path
 
       def create(state)
+        install_proxy if config[:lxd_proxy_install] && config[:lxd_proxy_install] == true
+
         unless exists?
           image_name = create_image_if_missing
           profile = "-p #{config[:profile]}" if config[:profile]
-          lxc_config = "-c #{config[:config]}" if config[:config]
           info("Initializing container #{instance.name}")
-          run_lxc_command("init #{image_name} #{instance.name} #{profile} #{lxc_config}")
+          run_lxc_command("init #{image_name} #{instance.name} #{profile}")
         end
 
         config_and_start_container unless running?
@@ -62,10 +65,13 @@ module Kitchen
             info("Stopping container #{instance.name}")
             run_lxc_command("stop #{instance.name}")
           end
-          info("Deleting container #{instance.name}")
-          run_lxc_command("delete #{instance.name}") unless config[:stop_instead_of_destroy]
+          unless config[:never_destroy]
+            info("Deleting container #{instance.name}")
+            run_lxc_command("delete #{instance.name}") unless config[:never_destroy] && config[:never_destroy] == true
+          end
         end
         state.delete(:hostname)
+        destroy_proxy if config[:lxd_proxy_destroy] && config[:lxd_proxy_destroy] == true
       end
 
       private
@@ -141,6 +147,11 @@ module Kitchen
             arg_disable_dhcp = "&& lxc exec #{instance.name} -- sed -i 's/dhcp/manual/g' /etc/network/interfaces.d/eth0.cfg"
           end
           # TODO: loop over/run all lxc config settings passed in or figure out how to use multiple with lxc init
+          IO.popen("bash", "r+") do |p|
+            config[:config].each do |key, value|
+              p.puts("lxc config set #{instance.name} #{key} #{value}")
+            end if config[:config]
+          end
           info("Starting container #{instance.name}")
           run_lxc_command("start #{instance.name} #{arg_disable_dhcp}")
         end
@@ -233,6 +244,46 @@ module Kitchen
           debug("Finished Copying public key from #{config[:public_key_path]} to #{instance.name}")
         end
 
+        def install_proxy
+          IO.popen("bash", "w") do |p|
+            if config[:lxd_proxy_verify] == true
+              kitchen_command = "kitchen verify"
+            else
+              kitchen_command = "kitchen converge"
+            end
+
+            #TODO: more thorough check to see if proxy is running.  Check via lxc commands
+            if config[:lxd_proxy_update] == true && File.exists?(config[:lxd_proxy_path])
+              debug("Updating proxy, if it fails you may either not want to update or recreate proxy-ubuntu-1404")
+              p.puts("cd #{config[:lxd_proxy_path]}")
+              p.puts("git pull")
+              p.puts("bundle update")
+              p.puts("berks update")
+              p.puts("bundle exec #{kitchen_command}")
+            elsif !File.exists?(config[:lxd_proxy_path])
+              github_url = config[:lxd_proxy_github_url] || "https://github.com/bradenwright/cookbook-lxd_polipo"
+              p.puts("git clone #{github_url} #{config[:lxd_proxy_path]}")
+              p.puts("cd #{config[:lxd_proxy_path]}")
+              p.puts("bundle install")
+              p.puts("bundle exec #{kitchen_command}")
+            end
+            #TODO: if Rakefile found run rake install instead
+            # This would allow others to build out different options
+            # for more complicated proxy installs
+          end rescue nil
+        end
+
+        def destroy_proxy
+          IO.popen("bash", "w") do |p|
+            if File.exists?(config[:lxd_proxy_path])
+              p.puts("cd #{config[:lxd_proxy_path]}")
+              p.puts("bundle exec kitchen destroy")
+              p.puts("cd ..")
+              p.puts("rm -rf #{config[:lxd_proxy_path]}")
+            end
+          end
+        end
+
         def wait_for_ip_address
           info("Waiting for network to become ready")
           begin
@@ -249,7 +300,7 @@ module Kitchen
         def wait_for_path(path)
           begin
             debug("Waiting for #{path} to become available...")
-            run_lxc_command("exec #{instance.name} -- ls #{path}")
+            run_lxc_command("exec #{instance.name} -- ls #{path} > /dev/null 2>&1")
             break if $?.to_i == 0
             sleep 0.3
           end while true
