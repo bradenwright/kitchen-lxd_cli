@@ -47,9 +47,10 @@ module Kitchen
 
         unless exists?
           image_name = create_image_if_missing
-          profile = "-p #{config[:profile]}" if config[:profile]
+          profile_args = setup_profile_args if config[:profile]
+          config_args = setup_config_args if config[:config]
           info("Initializing container #{instance.name}")
-          run_lxc_command("init #{image_name} #{instance.name} #{profile}")
+          run_lxc_command("init #{image_name} #{instance.name} #{profile_args} #{config_args}")
         end
 
         config_and_start_container unless running?
@@ -57,6 +58,11 @@ module Kitchen
         lxc_ip = wait_for_ip_address
         state[:hostname] = lxc_ip
         setup_ssh_access
+        wait_for_ssh_login(lxc_ip) if config[:enable_wait_for_ssh_login] == "true"
+        IO.popen("lxc exec #{instance.name} bash", "r+") do |p|
+          p.puts("if [ ! -d '#{config[:verifier_path]}' ]; then mkdir -p #{config[:verifier_path]}; fi") 
+          p.puts("if [ ! -L '/tmp/verifier' ]; then ln -s #{config[:verifier_path]} /tmp/verifier; fi")
+        end if config[:verifier_path] && config[:verifier_path].length > 0
       end
 
       def destroy(state)
@@ -65,6 +71,9 @@ module Kitchen
             info("Stopping container #{instance.name}")
             run_lxc_command("stop #{instance.name}")
           end
+          
+          publish_image if config[:publish_image_before_destroy]
+
           unless config[:never_destroy]
             info("Deleting container #{instance.name}")
             run_lxc_command("delete #{instance.name}") unless config[:never_destroy] && config[:never_destroy] == true
@@ -98,18 +107,19 @@ module Kitchen
         end
 
         def create_image_if_missing
-          image_name = config[:image_name] ||= instance.platform.name
-          `lxc image show #{image_name} > /dev/null 2>&1`
-          if $?.to_i == 0
-            debug("Image #{image_name} exists")
-          else
-            info("Image #{image_name} doesn't exist, creating now.")
+          image_name = get_image_name
+
+          unless image_exists?(image_name)
+            info("Creating image #{image_name} now.")
             image = get_image_info
-            image_os = config[:image_os] ||= image[:os]
-            image_release = config[:image_release] ||= image[:release]
+            image_os = config[:image_os] 
+            image_os ||= image[:os]
+            image_release = config[:image_release] 
+            image_release ||= image[:release]
             debug("Ran command: lxd-images import #{image_os} #{image_release} --alias #{image_name}")
             IO.popen("lxd-images import #{image_os} #{image_release} --alias #{image_name}", "w") { |pipe| puts pipe.gets rescue nil }
           end
+
           return image_name
         end
 
@@ -136,9 +146,56 @@ module Kitchen
           return image
         end
 
+        def publish_image
+          publish_image_name = get_publish_image_name
+          if image_exists?(publish_image_name)
+            if config[:publish_image_overwrite] == true
+              info("Deleting existing image #{publish_image_name}, so image of same name can be published")
+              run_lxc_command("image delete #{publish_image_name}")
+            else
+              raise "Image #{publish_image_name} already exists!  If you wish to overwrite it set publish_image_overwrite: true in kitchen.yml"
+            end
+          end
+          info("Publishing image #{publish_image_name}")
+          run_lxc_command("publish #{instance.name} --alias #{publish_image_name}")
+        end
+
+        def get_image_name
+          image_name = get_publish_image_name
+          unless config[:use_publish_image] == true && image_exists?(image_name)
+            image_name = config[:image_name] 
+            image_name ||= instance.platform.name
+          end
+
+          debug("Image Name is #{image_name}")
+          return image_name
+        end
+
+        def get_publish_image_name
+          publish_image_name = config[:publish_image_name]
+          publish_image_name ||= "kitchen-#{instance.name}"
+
+          debug("Publish Image Name is #{publish_image_name}")
+          return publish_image_name
+        end
+
+        def image_exists?(image_name)
+          `lxc image show #{image_name} > /dev/null 2>&1`
+          if $?.to_i == 0
+            debug("Image #{image_name} exists")
+            return true
+          else
+            debug("Image #{image_name} does not exist")
+            return false
+          end
+        end
+
         def config_and_start_container
+
+
           config[:ip_gateway] ||= "auto"
           arg_disable_dhcp = ""
+
           if config[:ipv4]
             IO.popen("bash", "r+") do |p|
               p.puts("echo -e \"lxc.network.type = veth\nlxc.network.name = eth0\nlxc.network.link = lxcbr0\nlxc.network.ipv4 = #{config[:ipv4]}\nlxc.network.ipv4.gateway = #{config[:ip_gateway]}\nlxc.network.flags = up\" | lxc config set #{instance.name} raw.lxc -")
@@ -146,14 +203,48 @@ module Kitchen
             end
             arg_disable_dhcp = "&& lxc exec #{instance.name} -- sed -i 's/dhcp/manual/g' /etc/network/interfaces.d/eth0.cfg"
           end
-          # TODO: loop over/run all lxc config settings passed in or figure out how to use multiple with lxc init
-          IO.popen("bash", "r+") do |p|
-            config[:config].each do |key, value|
-              p.puts("lxc config set #{instance.name} #{key} #{value}")
-            end if config[:config]
-          end
+
           info("Starting container #{instance.name}")
           run_lxc_command("start #{instance.name} #{arg_disable_dhcp}")
+        end
+
+        def setup_config_args
+          config_args = ""
+          if config[:config].class == String
+            config_args += " -c #{config[:config]}"
+          else
+            config[:config].each do |key, value|
+              config_args += " -c #{key}=#{value}"
+            end
+          end
+          if config[:mount].class == Hash
+            debug("security.privileged=true is added to Config Args, b/c its needed for mount binding")
+            config_args += " -c security.privileged=true"
+          end
+          debug("Config Args: #{config_args}")
+          setup_mount_bindings
+          return config_args
+        end
+
+        def setup_profile_args
+          profile_args = ""
+          if config[:profile].class == String
+            profile_args += " -p #{config[:profile]}"
+          else
+            config[:profile].each do |profile|
+              profile_args += " -p #{profile}"
+            end
+          end
+          debug("Profile Args: #{profile_args}")
+          return profile_args
+        end
+
+        def setup_mount_bindings
+          config[:mount].each do |mount_name, mount_binding|
+            if mount_name && mount_binding[:local_path] && mount_binding[:container_path]
+              run_lxc_command("config device add #{instance.name} #{mount_name} disk source=#{mount_binding[:local_path]} path=#{mount_binding[:container_path]}")
+            end
+          end if config[:mount].class == Hash
         end
 
         def configure_dns
@@ -194,41 +285,6 @@ module Kitchen
             p.puts("exit")
           end
         end
-=begin
-       def configure_ip_via_lxc_restart
-         debug("Configuring new ip address on eth0")
-
-         IO.popen("lxc exec #{instance.name} bash", "r+") do |p|
-           p.puts('echo -e "#############################################" > /etc/network/interfaces.d/eth0.cfg')
-           p.puts('echo -e "# DO NOT EDIT CONTROLLED BY KITCHEN-LXC_CLI #" >> /etc/network/interfaces.d/eth0.cfg')
-           p.puts('echo -e "#############################################" >> /etc/network/interfaces.d/eth0.cfg')
-           p.puts('echo -e "auto eth0" >> /etc/network/interfaces.d/eth0.cfg')
-           if config[:ipv4]
-             config[:ip_gateway] ||= "10.0.3.1"
-             config[:dns_servers] ||= [ "8.8.8.8", "8.8.4.4" ]
-             p.puts('echo -e "  iface eth0 inet static" >> /etc/network/interfaces.d/eth0.cfg')
-             p.puts("echo -e \"  address #{config[:ipv4]}\" >> /etc/network/interfaces.d/eth0.cfg")
-           else
-             p.puts('echo -e "  iface eth0 inet dhcp" >> /etc/network/interfaces.d/eth0.cfg')
-           end
-           p.puts("echo -e \"  gateway #{config[:ip_gateway]}\" >> /etc/network/interfaces.d/eth0.cfg") if config[:ip_gateway]
-           config[:dns_servers].each do |dns_server|
-             p.puts("echo -e \"  dns-nameserver #{dns_server}\" >> /etc/network/interfaces.d/eth0.cfg")
-           end if config[:dns_servers]
-           if config[:domain_name]
-             p.puts("echo -e \"  dns-search #{config[:domain_name]}\" >> /etc/network/interfaces.d/eth0.cfg")
-           end
-           p.puts("exit")
-         end
-         debug("Finished configuring new ip address, restarting #{instance.name} for settings to take effect")
-         debug_note_about_configuring_ip
-         wait_for_ip_address
-         sleep 3 # Was hanging more often than not whenever I lowered the sleep
-         debug("Restarting #{instance.name}")
-         run_lxc_command("restart #{instance.name}")
-         debug("Finished restarting #{instance.name} ip address should be configured")
-       end
-=end
 
         def setup_ssh_access
           info("Setting up public key #{config[:public_key_path]} on #{instance.name}")
@@ -307,6 +363,16 @@ module Kitchen
           debug("Found #{path}")
         end
 
+        def wait_for_ssh_login(ip)
+          begin
+            debug("Trying to login into #{ip} via SSH...")
+            `ssh root@#{ip} -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no 'true' > /dev/null 2>&1`
+            break if $?.to_i == 0
+            sleep 0.3
+          end while true
+          debug("SSH is up, able to login at root@#{ip}")
+        end
+
         def run_lxc_command(cmd)
           run_local_command("lxc #{cmd}") if cmd
         end
@@ -320,6 +386,44 @@ module Kitchen
         def debug_note_about_configuring_ip
           debug("NOTE: Restarting seemed to be the only way I could get things to work.  Tried lxc profiles, config options.  Tried restart networking service but it didn't work, also tried passing command like ifconfig 10.0.3.x/24 eth0 up.  Which set the ip but after container ran for a while, it would reset to dhcp address that had been assigned.  Restarting container seems to be working, and is really fast.  Open to better alternatives.")
         end
+
+        
+=begin
+       def configure_ip_via_lxc_restart
+         debug("Configuring new ip address on eth0")
+
+         IO.popen("lxc exec #{instance.name} bash", "r+") do |p|
+           p.puts('echo -e "#############################################" > /etc/network/interfaces.d/eth0.cfg')
+           p.puts('echo -e "# DO NOT EDIT CONTROLLED BY KITCHEN-LXC_CLI #" >> /etc/network/interfaces.d/eth0.cfg')
+           p.puts('echo -e "#############################################" >> /etc/network/interfaces.d/eth0.cfg')
+           p.puts('echo -e "auto eth0" >> /etc/network/interfaces.d/eth0.cfg')
+           if config[:ipv4]
+             config[:ip_gateway] ||= "10.0.3.1"
+             config[:dns_servers] ||= [ "8.8.8.8", "8.8.4.4" ]
+             p.puts('echo -e "  iface eth0 inet static" >> /etc/network/interfaces.d/eth0.cfg')
+             p.puts("echo -e \"  address #{config[:ipv4]}\" >> /etc/network/interfaces.d/eth0.cfg")
+           else
+             p.puts('echo -e "  iface eth0 inet dhcp" >> /etc/network/interfaces.d/eth0.cfg')
+           end
+           p.puts("echo -e \"  gateway #{config[:ip_gateway]}\" >> /etc/network/interfaces.d/eth0.cfg") if config[:ip_gateway]
+           config[:dns_servers].each do |dns_server|
+             p.puts("echo -e \"  dns-nameserver #{dns_server}\" >> /etc/network/interfaces.d/eth0.cfg")
+           end if config[:dns_servers]
+           if config[:domain_name]
+             p.puts("echo -e \"  dns-search #{config[:domain_name]}\" >> /etc/network/interfaces.d/eth0.cfg")
+           end
+           p.puts("exit")
+         end
+         debug("Finished configuring new ip address, restarting #{instance.name} for settings to take effect")
+         debug_note_about_configuring_ip
+         wait_for_ip_address
+         sleep 3 # Was hanging more often than not whenever I lowered the sleep
+         debug("Restarting #{instance.name}")
+         run_lxc_command("restart #{instance.name}")
+         debug("Finished restarting #{instance.name} ip address should be configured")
+       end
+=end
+
     end
   end
 end
