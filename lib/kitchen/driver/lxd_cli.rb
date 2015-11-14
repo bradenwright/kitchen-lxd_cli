@@ -191,8 +191,6 @@ module Kitchen
         end
 
         def config_and_start_container
-
-
           config[:ip_gateway] ||= "auto"
           arg_disable_dhcp = ""
 
@@ -206,6 +204,7 @@ module Kitchen
 
           info("Starting container #{instance.name}")
           run_lxc_command("start #{instance.name} #{arg_disable_dhcp}")
+          setup_mount_bindings if config[:mount].class == Hash
         end
 
         def setup_config_args
@@ -222,7 +221,6 @@ module Kitchen
             config_args += " -c security.privileged=true"
           end
           debug("Config Args: #{config_args}")
-          setup_mount_bindings
           return config_args
         end
 

@@ -21,6 +21,6 @@ module Kitchen
   module Driver
 
     # Version string for LxdCli Kitchen driver
-    LXD_CLI_VERSION = "0.1.4"
+    LXD_CLI_VERSION = "0.1.5"
   end
 end
