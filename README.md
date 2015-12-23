@@ -81,6 +81,7 @@ driver:
   publish_image_before_destroy: true
   publish_image_overwrite: true
   enable_wait_for_ssh_login: false
+  username: kitchen-user
 
 
 
@@ -363,6 +364,12 @@ Default is false.  If set to true container will loop until it can login to ssh,
 
 NOTE: Hope is that I can resolve the issues of needing to wait by writing a transport that uses lxc commands and not ssh, also will improve sped since ssh login is slow.
 
+### username
+
+Default is `root`. If set to another user name will create home directory and set to `${username} ALL=(ALL) NOPASSWD: ALL` on `/etc/sudoers`.
+
+`username: kitchen-user`
+ 
 ### <a name="config-require-chef-omnibus"></a> require\_chef\_omnibus
 
 Determines whether or not a Chef [Omnibus package][chef_omnibus_dl] will be
