@@ -39,6 +39,7 @@ module Kitchen
       default_config :never_destroy, false
       default_config :lxd_proxy_path, "#{ENV['HOME']}/.lxd_proxy"
       default_config :lxd_proxy_update, false
+      default_config :username, "root"
       
       required_config :public_key_path
 
@@ -57,6 +58,7 @@ module Kitchen
         configure_dns
         lxc_ip = wait_for_ip_address
         state[:hostname] = lxc_ip
+        state[:username] = config[:username]
         setup_ssh_access
         wait_for_ssh_login(lxc_ip) if config[:enable_wait_for_ssh_login] == "true"
         IO.popen("lxc exec #{instance.name} bash", "r+") do |p|
@@ -286,16 +288,35 @@ module Kitchen
 
         def setup_ssh_access
           info("Setting up public key #{config[:public_key_path]} on #{instance.name}")
-          wait_for_path("/root/.ssh")
+          unless config[:username] == "root"
+             create_ssh_user
+             info("Checking /home/#{config[:username]}/.ssh on #{instance.name}")
+             wait_for_path("/home/#{config[:username]}/.ssh")
+          else
+             info("Check /#{config[:username]}/.ssh on #{instance.name}")
+             wait_for_path("/#{config[:username]}/.ssh")
+          end
 
           begin
             debug("Uploading public key...")
-            `lxc file push #{config[:public_key_path]} #{instance.name}/root/.ssh/authorized_keys 2> /dev/null`
+            unless config[:username] == "root"
+              `lxc file push #{config[:public_key_path]} #{instance.name}/home/#{config[:username]}/.ssh/authorized_keys 2> /dev/null`
+            else
+              `lxc file push #{config[:public_key_path]} #{instance.name}/#{config[:username]}/.ssh/authorized_keys 2> /dev/null`
+            end
             break if $?.to_i == 0
             sleep 0.3
           end while true
 
           debug("Finished Copying public key from #{config[:public_key_path]} to #{instance.name}")
+        end
+
+        def create_ssh_user
+          info("Create user #{config[:username]} on #{instance.name}")
+          `lxc exec #{instance.name} -- useradd -m -G sudo #{config[:username]}`
+          `lxc exec #{instance.name} -- mkdir /home/#{config[:username]}/.ssh`
+          `lxc exec #{instance.name} -- chown #{config[:username]}:#{config[:username]} /home/#{config[:username]}/.ssh`
+          `lxc exec #{instance.name} -- sh -c "echo '#{config[:username]} ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers"`
         end
 
         def install_proxy
@@ -364,11 +385,11 @@ module Kitchen
         def wait_for_ssh_login(ip)
           begin
             debug("Trying to login into #{ip} via SSH...")
-            `ssh root@#{ip} -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no 'true' > /dev/null 2>&1`
+            `ssh #{config[:username]}@#{ip} -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no 'true' > /dev/null 2>&1`
             break if $?.to_i == 0
             sleep 0.3
           end while true
-          debug("SSH is up, able to login at root@#{ip}")
+          debug("SSH is up, able to login at #{config[:username]}@#{ip}")
         end
 
         def run_lxc_command(cmd)
