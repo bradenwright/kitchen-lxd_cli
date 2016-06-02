@@ -40,7 +40,7 @@ module Kitchen
       default_config :lxd_proxy_path, "#{ENV['HOME']}/.lxd_proxy"
       default_config :lxd_proxy_update, false
       default_config :username, "root"
-      
+
       required_config :public_key_path
 
       def create(state)
@@ -73,7 +73,7 @@ module Kitchen
             info("Stopping container #{instance.name}")
             run_lxc_command("stop #{instance.name}")
           end
-          
+
           publish_image if config[:publish_image_before_destroy]
 
           unless config[:never_destroy]
@@ -362,7 +362,7 @@ module Kitchen
         def wait_for_ip_address
           info("Waiting for network to become ready")
           begin
-            lxc_info = `lxc info #{instance.name}`.match(/^[ ]+eth0:[\t]IPV4[\t]([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+).*$/)
+            lxc_info = `lxc info #{instance.name}`.match(/eth0:\tinet\t(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/)
             debug("Still waiting for IP Address...")
             lxc_ip = lxc_info.captures[0].to_s if lxc_info && lxc_info.captures
             break if lxc_ip && lxc_ip.length > 7
