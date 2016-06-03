@@ -263,12 +263,19 @@ module Kitchen
             end if config[:ipv4] && dns_servers.length == 0
 
             if dns_servers.length > 0
-              wait_for_path("/etc/resolvconf/resolv.conf.d/base")
-              debug("Setting up the following dns servers via /etc/resolvconf/resolv.conf.d/base:")
-              debug(dns_servers.gsub("\n", ' '))
-              p.puts(" echo \"#{dns_servers.chomp}\" > /etc/resolvconf/resolv.conf.d/base")
-              wait_for_path("/run/resolvconf/interface")
-              p.puts("resolvconf -u")
+              if system "lxc exec #{instance.name} -- test -e /etc/redhat-release"
+                wait_for_path("/etc/resolv.conf")
+                debug("Setting up the following dns servers via /etc/resolv.conf:")
+                debug(dns_servers.gsub("\n", ' '))
+                p.puts(" echo \"#{dns_servers.chomp}\" > /etc/resolv.conf")
+              else
+                wait_for_path("/etc/resolvconf/resolv.conf.d/base")
+                debug("Setting up the following dns servers via /etc/resolvconf/resolv.conf.d/base:")
+                debug(dns_servers.gsub("\n", ' '))
+                p.puts(" echo \"#{dns_servers.chomp}\" > /etc/resolvconf/resolv.conf.d/base")
+                wait_for_path("/run/resolvconf/interface")
+                p.puts("resolvconf -u")
+              end
             end
 
             debug("Setting up /etc/hosts")
@@ -300,10 +307,12 @@ module Kitchen
           begin
             debug("Uploading public key...")
             unless config[:username] == "root"
-              `lxc file push #{config[:public_key_path]} #{instance.name}/home/#{config[:username]}/.ssh/authorized_keys 2> /dev/null`
+              homefolder = '/home/'
             else
-              `lxc file push #{config[:public_key_path]} #{instance.name}/#{config[:username]}/.ssh/authorized_keys 2> /dev/null`
+              homefolder = '/'
             end
+            authorized_keys_path = "#{homefolder}#{config[:username]}/.ssh/authorized_keys"
+            `lxc file push #{config[:public_key_path]} #{instance.name}#{authorized_keys_path} 2> /dev/null && lxc exec #{instance.name} -- chown #{config[:username]}:#{config[:username]} #{authorized_keys_path}`
             break if $?.to_i == 0
             sleep 0.3
           end while true
