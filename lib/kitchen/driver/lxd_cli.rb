@@ -17,6 +17,7 @@
 # limitations under the License.
 
 require 'kitchen'
+require 'fileutils'
 
 module Kitchen
 
@@ -49,7 +50,7 @@ module Kitchen
         unless exists?
           image_name = create_image_if_missing
           profile_args = setup_profile_args if config[:profile]
-          config_args = setup_config_args if config[:config]
+          config_args = setup_config_args
           info("Initializing container #{instance.name}")
           run_lxc_command("init #{image_name} #{instance.name} #{profile_args} #{config_args}")
         end
@@ -213,6 +214,8 @@ module Kitchen
           config_args = ""
           if config[:config].class == String
             config_args += " -c #{config[:config]}"
+          elsif config[:config].nil?
+            config_args += ""
           else
             config[:config].each do |key, value|
               config_args += " -c #{key}=#{value}"
@@ -242,7 +245,12 @@ module Kitchen
         def setup_mount_bindings
           config[:mount].each do |mount_name, mount_binding|
             if mount_name && mount_binding[:local_path] && mount_binding[:container_path]
-              run_lxc_command("config device add #{instance.name} #{mount_name} disk source=#{mount_binding[:local_path]} path=#{mount_binding[:container_path]}")
+              if ! File.directory?(mount_binding[:local_path]) && mount_binding[:create_source]
+                host_path = eval('"'+ mount_binding[:local_path] +'"')
+                debug("Source path for the #{mount_name} doesn't exist, creating #{host_path}")
+                FileUtils.mkdir_p(host_path)
+              end
+              run_lxc_command("config device add #{instance.name} #{mount_name} disk source=#{host_path} path=#{mount_binding[:container_path]}")
             end
           end if config[:mount].class == Hash
         end

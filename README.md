@@ -225,6 +225,8 @@ mount:
   mymount2:
     local_path: "/my/local/path"
     container_path: "/my/container/path"
+    # Attempts to create the local_path if it doesn't exist yet
+    create_source: true
 ```
 
 You can mount however many directories you like.  The kitchen-lxd_cli driver will run `lxc config device add <container> <name> disk <local_path>=<container_path>` 
