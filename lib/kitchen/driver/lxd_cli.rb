@@ -245,8 +245,9 @@ module Kitchen
         def setup_mount_bindings
           config[:mount].each do |mount_name, mount_binding|
             if mount_name && mount_binding[:local_path] && mount_binding[:container_path]
+              # eval is used here in case there's a need to pass instance.name as variable
+              host_path = eval('"'+ mount_binding[:local_path] +'"')
               if ! File.directory?(mount_binding[:local_path]) && mount_binding[:create_source]
-                host_path = eval('"'+ mount_binding[:local_path] +'"')
                 debug("Source path for the #{mount_name} doesn't exist, creating #{host_path}")
                 FileUtils.mkdir_p(host_path)
               end
