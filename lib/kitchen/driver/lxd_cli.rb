@@ -120,7 +120,7 @@ module Kitchen
             image_release = config[:image_release] 
             image_release ||= image[:release]
             debug("Ran command: lxd-images import #{image_os} #{image_release} --alias #{image_name}")
-            IO.popen("lxd-images import #{image_os} #{image_release} --alias #{image_name}", "w") { |pipe| puts pipe.gets rescue nil }
+#            IO.popen("lxd-images import #{image_os} #{image_release} --alias #{image_name}", "w") { |pipe| puts pipe.gets rescue nil }
           end
 
           return image_name
@@ -199,7 +199,7 @@ module Kitchen
 
           if config[:ipv4]
             IO.popen("bash", "r+") do |p|
-              p.puts("echo -e \"lxc.network.type = veth\nlxc.network.name = eth0\nlxc.network.link = lxcbr0\nlxc.network.ipv4 = #{config[:ipv4]}\nlxc.network.ipv4.gateway = #{config[:ip_gateway]}\nlxc.network.flags = up\" | lxc config set #{instance.name} raw.lxc -")
+              p.puts("echo -e \"lxc.network.0.ipv4 = #{config[:ipv4]}\nlxc.network.0.ipv4.gateway = #{config[:ip_gateway]}\n\" | lxc config set #{instance.name} raw.lxc -")
               p.puts("exit")
             end
             arg_disable_dhcp = "&& lxc exec #{instance.name} -- sed -i 's/dhcp/manual/g' /etc/network/interfaces.d/eth0.cfg"

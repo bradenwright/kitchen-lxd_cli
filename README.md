@@ -52,8 +52,8 @@ driver:
   image_release: trusty
   profile: my_lxc_profile
   config:
-    limits.memory: 2G
-    limits.cpus: 2
+    limits.memory: 2GB
+    limits.cpu: 2
     boot.autostart: true
   domain_name: lxc
   ip_gateway: 10.0.3.1
@@ -209,8 +209,8 @@ Default is Nil.  See LXC documentation but a lxc config container key/value can 
 
 ```yaml
 config:
-  limits.memory: 1G
-  limits.cpus: 2
+  limits.memory: 1GB
+  limits.cpu: 2
   boot.autostart: true
 ```
 
