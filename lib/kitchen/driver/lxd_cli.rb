@@ -118,8 +118,9 @@ module Kitchen
             image_os = config[:image_os] 
             image_os ||= image[:os]
             image_release = config[:image_release] 
-            image_release ||= image[:release]
-            debug("Ran command: lxd-images import #{image_os} #{image_release} --alias #{image_name}")
+            image_release ||= image[:release_num]
+            debug("Ran command: lxc image copy #{image_os}:#{image_release} local: --alias #{image_name}")
+            IO.popen("lxc image copy #{image_os}:#{image_release} local: --alias #{image_name}", "w") { |pipe| puts pipe.gets rescue nil }
 #            IO.popen("lxd-images import #{image_os} #{image_release} --alias #{image_name}", "w") { |pipe| puts pipe.gets rescue nil }
           end
 
@@ -131,20 +132,20 @@ module Kitchen
           if platform.downcase == "ubuntu"
             case release.downcase
             when "14.04", "1404", "trusty", "", nil
-              image = { :os => platform, :release => "trusty" }
+              image = { :os => platform, :release_name => "trusty", :release_num => '14.04' }
             when "14.10", "1410", "utopic"
-              image = { :os => platform, :release => "utopic" }
+              image = { :os => platform, :release_name => "utopic", :release_num => '14.10' }
             when "15.04", "1504", "vivid"
-              image = { :os => platform, :release => "vivid" }
+              image = { :os => platform, :release_name => "vivid", :release_num => '15.04' }
             when "15.10", "1510", "wily"
-              image = { :os => platform, :release => "wily" }
+              image = { :os => platform, :release_name => "wily", :release_num => '15.10'  }
             when "16.04", "1604", "xenial"
-              image = { :os => platform, :release => "xenial" }
+              image = { :os => platform, :release_name => "xenial", :release_num => '16.04'  }
             else
-              image = { :os => platform, :release => release }
+              image = { :os => platform, :release_name => release, :release_num => release  }
             end
           else
-            image = { :os => platform, :release => release }
+            image = { :os => platform, :release_name => release, :release_num => release }
           end
           return image
         end
