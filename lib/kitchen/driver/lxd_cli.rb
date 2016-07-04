@@ -317,11 +317,11 @@ module Kitchen
           begin
             debug("Uploading public key...")
             unless config[:username] == "root"
-              homefolder = '/home/'
+              home_path = '/home/'
             else
-              homefolder = '/'
+              home_path = '/'
             end
-            authorized_keys_path = "#{homefolder}#{config[:username]}/.ssh/authorized_keys"
+            authorized_keys_path = "#{home_path}#{config[:username]}/.ssh/authorized_keys"
             `lxc file push #{config[:public_key_path]} #{instance.name}#{authorized_keys_path} 2> /dev/null && lxc exec #{instance.name} -- chown #{config[:username]}:#{config[:username]} #{authorized_keys_path}`
             break if $?.to_i == 0
             sleep 0.3

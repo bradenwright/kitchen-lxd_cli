@@ -205,7 +205,7 @@ Default is Nil.  See LXC documentation but a lxc profile can be specified.  Whic
 
 Default is Nil.  See LXC documentation but a lxc config container key/value can be specified.  [LXC Container Config Options](https://github.com/lxc/lxd/blob/master/specs/configuration.md#keyvalue-configuration-1).  Config options are passed to "lxc init" command.  A String or a Hash of key/value pairs is accepted.
 
-`config: "limits.memory=2G"`
+`config: "limits.memory=2GB"`
 
 ```yaml
 config:
