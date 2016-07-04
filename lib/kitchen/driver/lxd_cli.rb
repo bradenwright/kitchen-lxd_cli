@@ -17,6 +17,7 @@
 # limitations under the License.
 
 require 'kitchen'
+require 'fileutils'
 
 module Kitchen
 
@@ -40,7 +41,7 @@ module Kitchen
       default_config :lxd_proxy_path, "#{ENV['HOME']}/.lxd_proxy"
       default_config :lxd_proxy_update, false
       default_config :username, "root"
-      
+
       required_config :public_key_path
 
       def create(state)
@@ -49,7 +50,7 @@ module Kitchen
         unless exists?
           image_name = create_image_if_missing
           profile_args = setup_profile_args if config[:profile]
-          config_args = setup_config_args if config[:config]
+          config_args = setup_config_args
           info("Initializing container #{instance.name}")
           run_lxc_command("init #{image_name} #{instance.name} #{profile_args} #{config_args}")
         end
@@ -73,7 +74,7 @@ module Kitchen
             info("Stopping container #{instance.name}")
             run_lxc_command("stop #{instance.name}")
           end
-          
+
           publish_image if config[:publish_image_before_destroy]
 
           unless config[:never_destroy]
@@ -117,9 +118,10 @@ module Kitchen
             image_os = config[:image_os] 
             image_os ||= image[:os]
             image_release = config[:image_release] 
-            image_release ||= image[:release]
-            debug("Ran command: lxd-images import #{image_os} #{image_release} --alias #{image_name}")
-            IO.popen("lxd-images import #{image_os} #{image_release} --alias #{image_name}", "w") { |pipe| puts pipe.gets rescue nil }
+            image_release ||= image[:release_num]
+            debug("Ran command: lxc image copy #{image_os}:#{image_release} local: --alias #{image_name}")
+            IO.popen("lxc image copy #{image_os}:#{image_release} local: --alias #{image_name}", "w") { |pipe| puts pipe.gets rescue nil }
+#            IO.popen("lxd-images import #{image_os} #{image_release} --alias #{image_name}", "w") { |pipe| puts pipe.gets rescue nil }
           end
 
           return image_name
@@ -130,20 +132,20 @@ module Kitchen
           if platform.downcase == "ubuntu"
             case release.downcase
             when "14.04", "1404", "trusty", "", nil
-              image = { :os => platform, :release => "trusty" }
+              image = { :os => platform, :release_name => "trusty", :release_num => '14.04' }
             when "14.10", "1410", "utopic"
-              image = { :os => platform, :release => "utopic" }
+              image = { :os => platform, :release_name => "utopic", :release_num => '14.10' }
             when "15.04", "1504", "vivid"
-              image = { :os => platform, :release => "vivid" }
+              image = { :os => platform, :release_name => "vivid", :release_num => '15.04' }
             when "15.10", "1510", "wily"
-              image = { :os => platform, :release => "wily" }
+              image = { :os => platform, :release_name => "wily", :release_num => '15.10'  }
             when "16.04", "1604", "xenial"
-              image = { :os => platform, :release => "xenial" }
+              image = { :os => platform, :release_name => "xenial", :release_num => '16.04'  }
             else
-              image = { :os => platform, :release => release }
+              image = { :os => platform, :release_name => release, :release_num => release  }
             end
           else
-            image = { :os => platform, :release => release }
+            image = { :os => platform, :release_name => release, :release_num => release }
           end
           return image
         end
@@ -198,7 +200,7 @@ module Kitchen
 
           if config[:ipv4]
             IO.popen("bash", "r+") do |p|
-              p.puts("echo -e \"lxc.network.type = veth\nlxc.network.name = eth0\nlxc.network.link = lxcbr0\nlxc.network.ipv4 = #{config[:ipv4]}\nlxc.network.ipv4.gateway = #{config[:ip_gateway]}\nlxc.network.flags = up\" | lxc config set #{instance.name} raw.lxc -")
+              p.puts("echo -e \"lxc.network.0.ipv4 = #{config[:ipv4]}\nlxc.network.0.ipv4.gateway = #{config[:ip_gateway]}\n\" | lxc config set #{instance.name} raw.lxc -")
               p.puts("exit")
             end
             arg_disable_dhcp = "&& lxc exec #{instance.name} -- sed -i 's/dhcp/manual/g' /etc/network/interfaces.d/eth0.cfg"
@@ -213,6 +215,8 @@ module Kitchen
           config_args = ""
           if config[:config].class == String
             config_args += " -c #{config[:config]}"
+          elsif config[:config].nil?
+            config_args += ""
           else
             config[:config].each do |key, value|
               config_args += " -c #{key}=#{value}"
@@ -242,7 +246,13 @@ module Kitchen
         def setup_mount_bindings
           config[:mount].each do |mount_name, mount_binding|
             if mount_name && mount_binding[:local_path] && mount_binding[:container_path]
-              run_lxc_command("config device add #{instance.name} #{mount_name} disk source=#{mount_binding[:local_path]} path=#{mount_binding[:container_path]}")
+              # eval is used here in case there's a need to pass instance.name as variable
+              host_path = eval('"'+ mount_binding[:local_path] +'"')
+              if ! File.directory?(mount_binding[:local_path]) && mount_binding[:create_source]
+                debug("Source path for the #{mount_name} doesn't exist, creating #{host_path}")
+                FileUtils.mkdir_p(host_path)
+              end
+              run_lxc_command("config device add #{instance.name} #{mount_name} disk source=#{host_path} path=#{mount_binding[:container_path]}")
             end
           end if config[:mount].class == Hash
         end
@@ -263,12 +273,19 @@ module Kitchen
             end if config[:ipv4] && dns_servers.length == 0
 
             if dns_servers.length > 0
-              wait_for_path("/etc/resolvconf/resolv.conf.d/base")
-              debug("Setting up the following dns servers via /etc/resolvconf/resolv.conf.d/base:")
-              debug(dns_servers.gsub("\n", ' '))
-              p.puts(" echo \"#{dns_servers.chomp}\" > /etc/resolvconf/resolv.conf.d/base")
-              wait_for_path("/run/resolvconf/interface")
-              p.puts("resolvconf -u")
+              if system "lxc exec #{instance.name} -- test -e /etc/redhat-release"
+                wait_for_path("/etc/resolv.conf")
+                debug("Setting up the following dns servers via /etc/resolv.conf:")
+                debug(dns_servers.gsub("\n", ' '))
+                p.puts(" echo \"#{dns_servers.chomp}\" > /etc/resolv.conf")
+              else
+                wait_for_path("/etc/resolvconf/resolv.conf.d/base")
+                debug("Setting up the following dns servers via /etc/resolvconf/resolv.conf.d/base:")
+                debug(dns_servers.gsub("\n", ' '))
+                p.puts(" echo \"#{dns_servers.chomp}\" > /etc/resolvconf/resolv.conf.d/base")
+                wait_for_path("/run/resolvconf/interface")
+                p.puts("resolvconf -u")
+              end
             end
 
             debug("Setting up /etc/hosts")
@@ -300,10 +317,12 @@ module Kitchen
           begin
             debug("Uploading public key...")
             unless config[:username] == "root"
-              `lxc file push #{config[:public_key_path]} #{instance.name}/home/#{config[:username]}/.ssh/authorized_keys 2> /dev/null`
+              home_path = '/home/'
             else
-              `lxc file push #{config[:public_key_path]} #{instance.name}/#{config[:username]}/.ssh/authorized_keys 2> /dev/null`
+              home_path = '/'
             end
+            authorized_keys_path = "#{home_path}#{config[:username]}/.ssh/authorized_keys"
+            `lxc file push #{config[:public_key_path]} #{instance.name}#{authorized_keys_path} 2> /dev/null && lxc exec #{instance.name} -- chown #{config[:username]}:#{config[:username]} #{authorized_keys_path}`
             break if $?.to_i == 0
             sleep 0.3
           end while true
@@ -362,7 +381,7 @@ module Kitchen
         def wait_for_ip_address
           info("Waiting for network to become ready")
           begin
-            lxc_info = `lxc info #{instance.name}`.match(/^[ ]+eth0:[\t]IPV4[\t]([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+).*$/)
+            lxc_info = `lxc info #{instance.name}`.match(/eth0:\tinet\t(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/)
             debug("Still waiting for IP Address...")
             lxc_ip = lxc_info.captures[0].to_s if lxc_info && lxc_info.captures
             break if lxc_ip && lxc_ip.length > 7

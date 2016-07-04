@@ -6,7 +6,7 @@ A Test Kitchen Driver for LXD / LXC
 
 This is a test-kitchen driver for lxd, which controls lxc.  I named it LxdCli because this is my first plugin and I wanted to leave LXD driver name in case a more extensive project is put together.  Although I've since added a lot more features than I originally planned.
 
-I'm running lxd --version 0.20 on ubuntu 15.10.  NOTE:  Networking options will not work LXD 0.21, 0.22 [Github Issue](https://github.com/lxc/lxd/issues/1259)
+I'm running lxd --version 2.0.2 on ubuntu 16.04.  Image setup, Networking options, etc will not work prior to 2.0.0 [Github Issue](https://github.com/lxc/lxd/issues/1259), use kitchen_lxd_cli 0.x.x for lxd 0.x.  Only tested with ubuntu containers, pull requests are welcome.
 
 I started the project because I really like the idea of developing containers, but kitchen-lxc wouldn't work with my version.  I also tried docker but preferred how lxd is closer to a hypervisor virtual machine.  For instance kitchen-docker my recipes that had worked on virtual machies for mongodb, the service would not start when using docker.  I was able to get the service to start but liked the concept of system containers more than application containers.  Ultimately I was interested in LXD and there wasn't anything out there.  I was quickly able to get my mongodb recipe working.  I figured I'd clean things up, and some features and publish it.  Since then I've added numerous features, mainly with a focus on speeding up development of cookbooks, and exploring LXD.
 
@@ -52,8 +52,8 @@ driver:
   image_release: trusty
   profile: my_lxc_profile
   config:
-    limits.memory: 2G
-    limits.cpus: 2
+    limits.memory: 2GB
+    limits.cpu: 2
     boot.autostart: true
   domain_name: lxc
   ip_gateway: 10.0.3.1
@@ -205,12 +205,12 @@ Default is Nil.  See LXC documentation but a lxc profile can be specified.  Whic
 
 Default is Nil.  See LXC documentation but a lxc config container key/value can be specified.  [LXC Container Config Options](https://github.com/lxc/lxd/blob/master/specs/configuration.md#keyvalue-configuration-1).  Config options are passed to "lxc init" command.  A String or a Hash of key/value pairs is accepted.
 
-`config: "limits.memory=2G"`
+`config: "limits.memory=2GB"`
 
 ```yaml
 config:
-  limits.memory: 1G
-  limits.cpus: 2
+  limits.memory: 1GB
+  limits.cpu: 2
   boot.autostart: true
 ```
 
@@ -225,6 +225,8 @@ mount:
   mymount2:
     local_path: "/my/local/path"
     container_path: "/my/container/path"
+    # Attempts to create the local_path if it doesn't exist yet
+    create_source: true
 ```
 
 You can mount however many directories you like.  The kitchen-lxd_cli driver will run `lxc config device add <container> <name> disk <local_path>=<container_path>` 
