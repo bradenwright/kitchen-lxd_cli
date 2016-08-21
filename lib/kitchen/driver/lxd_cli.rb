@@ -30,19 +30,22 @@ module Kitchen
       kitchen_driver_api_version 2
 
       default_config :public_key_path do
+        pub_key = \
         [
           File.expand_path('~/.ssh/id_rsa.pub'),
           File.expand_path('~/.ssh/id_dsa.pub'),
           File.expand_path('~/.ssh/identity.pub'),
           File.expand_path('~/.ssh/id_ecdsa.pub')
         ].find { |path| File.exist?(path) }
+          
+        raise 'Public key could not be found in the public_key_path provided.  Please update the kitchen-lxd_cli config public_key_path in kitchen yaml or create a ssh key pair (e.g. `ssh-keygen -t rsa`)' unless pub_key
+
+        pub_key
       end
       default_config :never_destroy, false
       default_config :lxd_proxy_path, "#{ENV['HOME']}/.lxd_proxy"
       default_config :lxd_proxy_update, false
-      default_config :username, "root"
-
-      required_config :public_key_path
+      default_config :username, 'root'
 
       def create(state)
         install_proxy if config[:lxd_proxy_install] && config[:lxd_proxy_install] == true
@@ -87,6 +90,7 @@ module Kitchen
       end
 
       private
+
         def exists?
           `lxc info #{instance.name} > /dev/null 2>&1`
           if $?.to_i == 0
@@ -157,7 +161,7 @@ module Kitchen
               info("Deleting existing image #{publish_image_name}, so image of same name can be published")
               run_lxc_command("image delete #{publish_image_name}")
             else
-              raise "Image #{publish_image_name} already exists!  If you wish to overwrite it set publish_image_overwrite: true in kitchen.yml"
+              raise "Image #{publish_image_name} already exists!  If you wish to overwrite it set publish_image_overwrite: true in kitchen yaml"
             end
           end
           info("Publishing image #{publish_image_name}")
