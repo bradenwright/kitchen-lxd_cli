@@ -75,14 +75,14 @@ module Kitchen
         if exists?
           if running?
             info("Stopping container #{instance.name}")
-            run_lxc_command("stop #{instance.name}")
+            run_lxc_command("stop #{instance.name} --force")
           end
 
           publish_image if config[:publish_image_before_destroy]
 
           unless config[:never_destroy]
             info("Deleting container #{instance.name}")
-            run_lxc_command("delete #{instance.name}") unless config[:never_destroy] && config[:never_destroy] == true
+            run_lxc_command("delete #{instance.name} --force") unless config[:never_destroy] && config[:never_destroy] == true
           end
         end
         state.delete(:hostname)
@@ -125,7 +125,6 @@ module Kitchen
             image_release ||= image[:release_num]
             debug("Ran command: lxc image copy #{image_os}:#{image_release} local: --alias #{image_name}")
             IO.popen("lxc image copy #{image_os}:#{image_release} local: --alias #{image_name}", "w") { |pipe| puts pipe.gets rescue nil }
-#            IO.popen("lxd-images import #{image_os} #{image_release} --alias #{image_name}", "w") { |pipe| puts pipe.gets rescue nil }
           end
 
           return image_name
