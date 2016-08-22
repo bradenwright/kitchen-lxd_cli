@@ -47,15 +47,18 @@ module Kitchen
       default_config :lxd_proxy_update, false
       default_config :username, 'root'
 
+      @@instance_name
+
       def create(state)
+        @@instance_name = get_or_create_unique_instance_name
         install_proxy if config[:lxd_proxy_install] && config[:lxd_proxy_install] == true
 
         unless exists?
           image_name = create_image_if_missing
           profile_args = setup_profile_args if config[:profile]
           config_args = setup_config_args
-          info("Initializing container #{instance.name}")
-          run_lxc_command("init #{image_name} #{instance.name} #{profile_args} #{config_args}")
+          info("Initializing container #{@@instance_name}")
+          run_lxc_command("init #{image_name} #{@@instance_name} #{profile_args} #{config_args}")
         end
 
         config_and_start_container unless running?
@@ -65,24 +68,26 @@ module Kitchen
         state[:username] = config[:username]
         setup_ssh_access
         wait_for_ssh_login(lxc_ip) if config[:enable_wait_for_ssh_login] == "true"
-        IO.popen("lxc exec #{instance.name} bash", "r+") do |p|
+        IO.popen("lxc exec #{@@instance_name} bash", "r+") do |p|
           p.puts("if [ ! -d '#{config[:verifier_path]}' ]; then mkdir -p #{config[:verifier_path]}; fi") 
           p.puts("if [ ! -L '/tmp/verifier' ]; then ln -s #{config[:verifier_path]} /tmp/verifier; fi")
         end if config[:verifier_path] && config[:verifier_path].length > 0
       end
 
       def destroy(state)
+        @@instance_name = get_or_create_unique_instance_name
         if exists?
           if running?
-            info("Stopping container #{instance.name}")
-            run_lxc_command("stop #{instance.name} --force")
+            info("Stopping container #{@@instance_name}")
+            run_lxc_command("stop #{@@instance_name} --force")
           end
 
           publish_image if config[:publish_image_before_destroy]
 
-          unless config[:never_destroy]
-            info("Deleting container #{instance.name}")
-            run_lxc_command("delete #{instance.name} --force") unless config[:never_destroy] && config[:never_destroy] == true
+          unless config[:never_destroy] && config[:never_destroy] == true
+            info("Deleting container #{@@instance_name}")
+            run_lxc_command("delete #{@@instance_name} --force")
+            File.delete(".kitchen/#{instance.name}.lxd_unique_name") if File.exist?(".kitchen/#{instance.name}.lxd_unique_name")
           end
         end
         state.delete(:hostname)
@@ -90,25 +95,29 @@ module Kitchen
       end
 
       private
+        def get_or_create_unique_instance_name 
+          File.write(".kitchen/#{instance.name}.lxd", "#{instance.name}-#{Time.now.to_i}") unless File.exist?(".kitchen/#{instance.name}.lxd")
+          File.read(".kitchen/#{instance.name}.lxd") 
+        end
 
         def exists?
-          `lxc info #{instance.name} > /dev/null 2>&1`
+          `lxc info #{@@instance_name} > /dev/null 2>&1`
           if $?.to_i == 0
-            debug("Container #{instance.name} exists")
+            debug("Container #{@@instance_name} exists")
             return true
           else
-            debug("Container #{instance.name} doesn't exist")
+            debug("Container #{@@instance_name} doesn't exist")
             return false
           end
         end
 
         def running?
-          status = `lxc info #{instance.name}`.match(/Status: ([a-zA-Z]+)[\n]/).captures[0].upcase
+          status = `lxc info #{@@instance_name}`.match(/Status: ([a-zA-Z]+)[\n]/).captures[0].upcase
           if status == "RUNNING"
-            debug("Container #{instance.name} is running")
+            debug("Container #{@@instance_name} is running")
             return true
           else
-            debug("Container #{instance.name} isn't running")
+            debug("Container #{@@instance_name} isn't running")
             return false
           end
         end
@@ -164,7 +173,7 @@ module Kitchen
             end
           end
           info("Publishing image #{publish_image_name}")
-          run_lxc_command("publish #{instance.name} --alias #{publish_image_name}")
+          run_lxc_command("publish #{@@instance_name} --alias #{publish_image_name}")
         end
 
         def get_image_name
@@ -203,14 +212,14 @@ module Kitchen
 
           if config[:ipv4]
             IO.popen("bash", "r+") do |p|
-              p.puts("echo -e \"lxc.network.0.ipv4 = #{config[:ipv4]}\nlxc.network.0.ipv4.gateway = #{config[:ip_gateway]}\n\" | lxc config set #{instance.name} raw.lxc -")
+              p.puts("echo -e \"lxc.network.0.ipv4 = #{config[:ipv4]}\nlxc.network.0.ipv4.gateway = #{config[:ip_gateway]}\n\" | lxc config set #{@@instance_name} raw.lxc -")
               p.puts("exit")
             end
-            arg_disable_dhcp = "&& lxc exec #{instance.name} -- sed -i 's/dhcp/manual/g' /etc/network/interfaces.d/eth0.cfg"
+            arg_disable_dhcp = "&& lxc exec #{@@instance_name} -- sed -i 's/dhcp/manual/g' /etc/network/interfaces.d/eth0.cfg"
           end
 
-          info("Starting container #{instance.name}")
-          run_lxc_command("start #{instance.name} #{arg_disable_dhcp}")
+          info("Starting container #{@@instance_name}")
+          run_lxc_command("start #{@@instance_name} #{arg_disable_dhcp}")
           setup_mount_bindings if config[:mount].class == Hash
         end
 
@@ -255,13 +264,13 @@ module Kitchen
                 debug("Source path for the #{mount_name} doesn't exist, creating #{host_path}")
                 FileUtils.mkdir_p(host_path)
               end
-              run_lxc_command("config device add #{instance.name} #{mount_name} disk source=#{host_path} path=#{mount_binding[:container_path]}")
+              run_lxc_command("config device add #{@@instance_name} #{mount_name} disk source=#{host_path} path=#{mount_binding[:container_path]}")
             end
           end if config[:mount].class == Hash
         end
 
         def configure_dns
-          IO.popen("lxc exec #{instance.name} bash", "r+") do |p|
+          IO.popen("lxc exec #{@@instance_name} bash", "r+") do |p|
             dns_servers = ""
             config[:dns_servers].each do |dns_server|
               dns_servers += "nameserver #{dns_server}\n"
@@ -276,7 +285,7 @@ module Kitchen
             end if config[:ipv4] && dns_servers.length == 0
 
             if dns_servers.length > 0
-              if system "lxc exec #{instance.name} -- test -e /etc/redhat-release"
+              if system "lxc exec #{@@instance_name} -- test -e /etc/redhat-release"
                 wait_for_path("/etc/resolv.conf")
                 debug("Setting up the following dns servers via /etc/resolv.conf:")
                 debug(dns_servers.gsub("\n", ' '))
@@ -307,13 +316,13 @@ module Kitchen
         end
 
         def setup_ssh_access
-          info("Setting up public key #{config[:public_key_path]} on #{instance.name}")
+          info("Setting up public key #{config[:public_key_path]} on #{@@instance_name}")
           unless config[:username] == "root"
              create_ssh_user
-             info("Checking /home/#{config[:username]}/.ssh on #{instance.name}")
+             info("Checking /home/#{config[:username]}/.ssh on #{@@instance_name}")
              wait_for_path("/home/#{config[:username]}/.ssh")
           else
-             info("Check /#{config[:username]}/.ssh on #{instance.name}")
+             info("Check /#{config[:username]}/.ssh on #{@@instance_name}")
              wait_for_path("/#{config[:username]}/.ssh")
           end
 
@@ -325,20 +334,20 @@ module Kitchen
               home_path = '/'
             end
             authorized_keys_path = "#{home_path}#{config[:username]}/.ssh/authorized_keys"
-            `lxc file push #{config[:public_key_path]} #{instance.name}#{authorized_keys_path} 2> /dev/null && lxc exec #{instance.name} -- chown #{config[:username]}:#{config[:username]} #{authorized_keys_path}`
+            `lxc file push #{config[:public_key_path]} #{@@instance_name}#{authorized_keys_path} 2> /dev/null && lxc exec #{@@instance_name} -- chown #{config[:username]}:#{config[:username]} #{authorized_keys_path}`
             break if $?.to_i == 0
             sleep 0.3
           end while true
 
-          debug("Finished Copying public key from #{config[:public_key_path]} to #{instance.name}")
+          debug("Finished Copying public key from #{config[:public_key_path]} to #{@@instance_name}")
         end
 
         def create_ssh_user
-          info("Create user #{config[:username]} on #{instance.name}")
-          `lxc exec #{instance.name} -- useradd -m -G sudo #{config[:username]} -s /bin/bash`
-          `lxc exec #{instance.name} -- mkdir /home/#{config[:username]}/.ssh`
-          `lxc exec #{instance.name} -- chown #{config[:username]}:#{config[:username]} /home/#{config[:username]}/.ssh`
-          `lxc exec #{instance.name} -- sh -c "echo '#{config[:username]} ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers"`
+          info("Create user #{config[:username]} on #{@@instance_name}")
+          `lxc exec #{@@instance_name} -- useradd -m -G sudo #{config[:username]} -s /bin/bash`
+          `lxc exec #{@@instance_name} -- mkdir /home/#{config[:username]}/.ssh`
+          `lxc exec #{@@instance_name} -- chown #{config[:username]}:#{config[:username]} /home/#{config[:username]}/.ssh`
+          `lxc exec #{@@instance_name} -- sh -c "echo '#{config[:username]} ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers"`
         end
 
         def install_proxy
@@ -384,7 +393,7 @@ module Kitchen
         def wait_for_ip_address
           info("Waiting for network to become ready")
           begin
-            lxc_info = `lxc info #{instance.name}`.match(/eth0:\tinet\t(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/)
+            lxc_info = `lxc info #{@@instance_name}`.match(/eth0:\tinet\t(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/)
             debug("Still waiting for IP Address...")
             lxc_ip = lxc_info.captures[0].to_s if lxc_info && lxc_info.captures
             break if lxc_ip && lxc_ip.length > 7
@@ -397,7 +406,7 @@ module Kitchen
         def wait_for_path(path)
           begin
             debug("Waiting for #{path} to become available...")
-            run_lxc_command("exec #{instance.name} -- ls #{path} > /dev/null 2>&1")
+            run_lxc_command("exec #{@@instance_name} -- ls #{path} > /dev/null 2>&1")
             break if $?.to_i == 0
             sleep 0.3
           end while true
@@ -433,7 +442,7 @@ module Kitchen
        def configure_ip_via_lxc_restart
          debug("Configuring new ip address on eth0")
 
-         IO.popen("lxc exec #{instance.name} bash", "r+") do |p|
+         IO.popen("lxc exec #{@@instance_name} bash", "r+") do |p|
            p.puts('echo -e "#############################################" > /etc/network/interfaces.d/eth0.cfg')
            p.puts('echo -e "# DO NOT EDIT CONTROLLED BY KITCHEN-LXC_CLI #" >> /etc/network/interfaces.d/eth0.cfg')
            p.puts('echo -e "#############################################" >> /etc/network/interfaces.d/eth0.cfg')
@@ -455,13 +464,13 @@ module Kitchen
            end
            p.puts("exit")
          end
-         debug("Finished configuring new ip address, restarting #{instance.name} for settings to take effect")
+         debug("Finished configuring new ip address, restarting #{@@instance_name} for settings to take effect")
          debug_note_about_configuring_ip
          wait_for_ip_address
          sleep 3 # Was hanging more often than not whenever I lowered the sleep
-         debug("Restarting #{instance.name}")
-         run_lxc_command("restart #{instance.name}")
-         debug("Finished restarting #{instance.name} ip address should be configured")
+         debug("Restarting #{@@instance_name}")
+         run_lxc_command("restart #{@@instance_name}")
+         debug("Finished restarting #{@@instance_name} ip address should be configured")
        end
 =end
 
