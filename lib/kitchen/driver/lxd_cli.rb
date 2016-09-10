@@ -46,6 +46,7 @@ module Kitchen
       default_config :lxd_proxy_path, "#{ENV['HOME']}/.lxd_proxy"
       default_config :lxd_proxy_update, false
       default_config :username, 'root'
+      default_config :lxd_unique_name, true
 
       @@instance_name
 
@@ -95,9 +96,14 @@ module Kitchen
       end
 
       private
-        def get_or_create_unique_instance_name 
-          File.write(".kitchen/#{instance.name}.lxd", "#{instance.name}-#{Time.now.to_i}") unless File.exist?(".kitchen/#{instance.name}.lxd")
-          File.read(".kitchen/#{instance.name}.lxd") 
+        def get_or_create_unique_instance_name
+          if config[:lxd_unique_name] == false
+            instance_name = instance.name
+          else
+            File.write(".kitchen/#{instance.name}.lxd", "#{instance.name}-#{Time.now.to_i}") unless File.exist?(".kitchen/#{instance.name}.lxd")
+            instance_name = File.read(".kitchen/#{instance.name}.lxd")
+          end
+          instance_name
         end
 
         def exists?

@@ -65,7 +65,6 @@ driver:
 #  lxd_proxy_update: true
 #  lxd_proxy_path: "~/.lxd_proxy"
 #  lxd_proxy_github_url: "-b development --single-branch https://github.com/bradenwright/cookbook-lxd_polipo
-#  enable_wait_for_ssh_login: true
   mount:
     rails_mongodb_app:
       local_path: "/mylocalpath"
@@ -79,6 +78,7 @@ driver:
   use_publish_image: true
   publish_image_before_destroy: true
   publish_image_overwrite: true
+  lxd_unique_name: true
   enable_wait_for_ssh_login: false
   username: kitchen-user
 
@@ -160,6 +160,7 @@ Current config options:
 *  lxd_proxy_update
 *  lxd_proxy_path
 *  lxd_proxy_github_url
+*  lxd_unique_name
 
 ### public_key_path
 
@@ -356,6 +357,10 @@ Default is https://github.com/bradenwright/cookbook-lxd_polipo basically if can 
 ```yaml
 lxd_proxy_github_url: "-b development --single-branch https://github.com/bradenwright/cookbook-lxd_polipo"
 ```
+
+### lxd_unique_name
+
+Default is true.  If true a file is written to .kitchen/<instance_name>.lxd with the unique name.  This file is used to identify the lxd instance.  If you don't want this feature, set to false
 
 ### enable_wait_for_ssh_login
 
