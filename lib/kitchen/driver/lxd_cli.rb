@@ -37,7 +37,7 @@ module Kitchen
           File.expand_path('~/.ssh/identity.pub'),
           File.expand_path('~/.ssh/id_ecdsa.pub')
         ].find { |path| File.exist?(path) }
-          
+
         raise 'Public key could not be found in the public_key_path provided.  Please update the kitchen-lxd_cli config public_key_path in kitchen yaml or create a ssh key pair (e.g. `ssh-keygen -t rsa`)' unless pub_key
 
         pub_key
@@ -70,7 +70,7 @@ module Kitchen
         setup_ssh_access
         wait_for_ssh_login(lxc_ip) if config[:enable_wait_for_ssh_login] == "true"
         IO.popen("lxc exec #{@@instance_name} bash", "r+") do |p|
-          p.puts("if [ ! -d '#{config[:verifier_path]}' ]; then mkdir -p #{config[:verifier_path]}; fi") 
+          p.puts("if [ ! -d '#{config[:verifier_path]}' ]; then mkdir -p #{config[:verifier_path]}; fi")
           p.puts("if [ ! -L '/tmp/verifier' ]; then ln -s #{config[:verifier_path]} /tmp/verifier; fi")
         end if config[:verifier_path] && config[:verifier_path].length > 0
       end
@@ -134,9 +134,9 @@ module Kitchen
           unless image_exists?(image_name)
             info("Creating image #{image_name} now.")
             image = get_image_info
-            image_os = config[:image_os] 
+            image_os = config[:image_os]
             image_os ||= image[:os]
-            image_release = config[:image_release] 
+            image_release = config[:image_release]
             image_release ||= image[:release_num]
             debug("Ran command: lxc image copy #{image_os}:#{image_release} local: --alias #{image_name}")
             IO.popen("lxc image copy #{image_os}:#{image_release} local: --alias #{image_name}", "w") { |pipe| puts pipe.gets rescue nil }
@@ -185,7 +185,7 @@ module Kitchen
         def get_image_name
           image_name = get_publish_image_name
           unless config[:use_publish_image] == true && image_exists?(image_name)
-            image_name = config[:image_name] 
+            image_name = config[:image_name]
             image_name ||= instance.platform.name
           end
 
@@ -211,8 +211,9 @@ module Kitchen
             return false
           end
         end
-
+0
         def config_and_start_container
+          platform, release = instance.platform.name.split('-')
           config[:ip_gateway] ||= "auto"
           arg_disable_dhcp = ""
 
@@ -221,7 +222,11 @@ module Kitchen
               p.puts("echo -e \"lxc.network.0.ipv4 = #{config[:ipv4]}\nlxc.network.0.ipv4.gateway = #{config[:ip_gateway]}\n\" | lxc config set #{@@instance_name} raw.lxc -")
               p.puts("exit")
             end
-            arg_disable_dhcp = "&& lxc exec #{@@instance_name} -- sed -i 's/dhcp/manual/g' /etc/network/interfaces.d/eth0.cfg"
+            if platform.downcase == "ubuntu"
+              arg_disable_dhcp = "&& lxc exec #{@@instance_name} -- sed -i 's/dhcp/manual/g' /etc/network/interfaces.d/eth0.cfg"
+            elsif platform.downcase == "centos"
+              arg_disable_dhcp = "&& lxc exec #{@@instance_name} -- sed -i 's/dhcp/none/g'  /etc/sysconfig/network-scripts/ifcfg-eth0"
+            end
           end
 
           info("Starting container #{@@instance_name}")
@@ -443,7 +448,7 @@ module Kitchen
           debug("NOTE: Restarting seemed to be the only way I could get things to work.  Tried lxc profiles, config options.  Tried restart networking service but it didn't work, also tried passing command like ifconfig 10.0.3.x/24 eth0 up.  Which set the ip but after container ran for a while, it would reset to dhcp address that had been assigned.  Restarting container seems to be working, and is really fast.  Open to better alternatives.")
         end
 
-        
+
 =begin
        def configure_ip_via_lxc_restart
          debug("Configuring new ip address on eth0")
