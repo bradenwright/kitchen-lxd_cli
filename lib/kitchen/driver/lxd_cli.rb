@@ -159,6 +159,8 @@ module Kitchen
               image = { :os => platform, :release_name => "wily", :release_num => '15.10'  }
             when "16.04", "1604", "xenial"
               image = { :os => platform, :release_name => "xenial", :release_num => '16.04'  }
+            when "16.10", "1610", "yakkety"
+              image = { :os => platform, :release_name => "yaketty", :release_num => '16.04'  }
             else
               image = { :os => platform, :release_name => release, :release_num => release  }
             end
@@ -215,22 +217,31 @@ module Kitchen
         def config_and_start_container
           platform, release = instance.platform.name.split('-')
           config[:ip_gateway] ||= "auto"
-          arg_disable_dhcp = ""
+          disable_dhcp_cmd, eth_path = ''
 
           if config[:ipv4]
             IO.popen("bash", "r+") do |p|
               p.puts("echo -e \"lxc.network.0.ipv4 = #{config[:ipv4]}\nlxc.network.0.ipv4.gateway = #{config[:ip_gateway]}\n\" | lxc config set #{@@instance_name} raw.lxc -")
               p.puts("exit")
             end
-            if platform.downcase == "ubuntu"
-              arg_disable_dhcp = "&& lxc exec #{@@instance_name} -- sed -i 's/dhcp/manual/g' /etc/network/interfaces.d/eth0.cfg"
+            if platform.downcase == "ubuntu" && release.gsub('.','').to_i < 1604
+              eth_path = '/etc/network/interfaces.d/eth0.cfg' 
+              disable_dhcp_cmd = "exec #{@@instance_name} -- sed -i 's/dhcp/manual/g' #{eth_path}"
+            elsif platform.downcase == "ubuntu"
+              eth_path = '/etc/network/interfaces.d/50-cloud-init.cfg'
+              disable_dhcp_cmd = "exec #{@@instance_name} -- sed -i 's/dhcp/manual/g' #{eth_path}"
             elsif platform.downcase == "centos"
-              arg_disable_dhcp = "&& lxc exec #{@@instance_name} -- sed -i 's/dhcp/none/g'  /etc/sysconfig/network-scripts/ifcfg-eth0"
+              eth_path = '/etc/sysconfig/network-scripts/ifcfg-eth0'
+              disable_dhcp_cmd = "exec #{@@instance_name} -- sed -i 's/dhcp/none/g'  /etc/sysconfig/network-scripts/ifcfg-eth0"
             end
           end
 
           info("Starting container #{@@instance_name}")
-          run_lxc_command("start #{@@instance_name} #{arg_disable_dhcp}")
+          run_lxc_command("start #{@@instance_name}")
+          if disable_dhcp_cmd
+            wait_for_path eth_path
+            run_lxc_command(disable_dhcp_cmd) 
+          end
           setup_mount_bindings if config[:mount].class == Hash
         end
 
